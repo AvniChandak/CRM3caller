@@ -54,14 +54,18 @@ const Login = () => {
       {/* Main Login Card */}
       <div className="w-full max-w-md z-10">
         <div className="text-center mb-8">
-          <div className="inline-flex p-3 rounded-2xl bg-gradient-to-tr from-blue-600 to-emerald-500 text-white shadow-lg shadow-blue-500/20 mb-3 animate-bounce">
-            <Sparkles size={28} />
+          <div className="inline-flex mb-3">
+            <img 
+              src="/ks_logo.png" 
+              alt="Krishna Sapkal Logo" 
+              className="w-20 h-20 object-contain rounded-2xl border border-slate-200 dark:border-slate-800 p-1 bg-white shadow-md shadow-blue-500/10" 
+            />
           </div>
-          <h1 className="text-3xl font-extrabold tracking-tight text-slate-950 dark:text-white">
-            LeadFlow <span className="bg-gradient-to-r from-blue-600 to-emerald-500 bg-clip-text text-transparent">CRM</span>
+          <h1 className="text-2xl font-extrabold tracking-tight text-slate-950 dark:text-white mt-1">
+            Lead Management System
           </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">
-            Coaching & Business Lead Management System
+          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 mt-2 uppercase tracking-wider">
+            Krishna Sapkal
           </p>
         </div>
 

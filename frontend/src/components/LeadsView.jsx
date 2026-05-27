@@ -13,8 +13,10 @@ import {
   CalendarCheck,
   UserSquare2,
   X,
-  Loader
+  Loader,
+  Printer
 } from 'lucide-react';
+import ReceiptModal from './ReceiptModal';
 
 const LeadsView = ({ 
   leads, 
@@ -40,14 +42,20 @@ const LeadsView = ({
     name: '',
     phone: '',
     email: '',
-    course: '',
-    source: 'Manual Entry',
+    course: 'Basic',
+    source: '',
     status: 'New',
     assigned_to: '',
     notes: '',
     follow_up_date: ''
   });
   const [isCreating, setIsCreating] = useState(false);
+  const [counsellorSelect, setCounsellorSelect] = useState('');
+  const [counsellorManualName, setCounsellorManualName] = useState('');
+
+  // Receipt Modal State
+  const [isReceiptOpen, setIsReceiptOpen] = useState(false);
+  const [receiptLead, setReceiptLead] = useState(null);
 
   // CSV Import Modal (Admin Only)
   const [isImportOpen, setIsImportOpen] = useState(false);
@@ -60,7 +68,7 @@ const LeadsView = ({
     const matchSearch = 
       lead.name.toLowerCase().includes(query) ||
       lead.phone.toLowerCase().includes(query) ||
-      lead.email.toLowerCase().includes(query) ||
+      (lead.email && lead.email.toLowerCase().includes(query)) ||
       lead.course.toLowerCase().includes(query) ||
       lead.source.toLowerCase().includes(query);
 
@@ -132,7 +140,7 @@ const LeadsView = ({
   // Single Lead Submit (Admin Only)
   const handleAddSubmit = async (e) => {
     e.preventDefault();
-    if (!newLead.name || !newLead.phone || !newLead.email || !newLead.course) {
+    if (!newLead.name || !newLead.phone || !newLead.course) {
       alert('Please fill out all required fields.');
       return;
     }
@@ -153,12 +161,14 @@ const LeadsView = ({
       alert(`Lead inserted and assigned to: ${data.assignedTo}`);
       
       setIsAddOpen(false);
+      setCounsellorSelect('');
+      setCounsellorManualName('');
       setNewLead({
         name: '',
         phone: '',
         email: '',
-        course: '',
-        source: 'Manual Entry',
+        course: 'Basic',
+        source: '',
         status: 'New',
         assigned_to: '',
         notes: '',
@@ -298,6 +308,18 @@ const LeadsView = ({
 
         {/* Right Side: Operation triggers */}
         <div className="flex gap-2.5 sm:self-end">
+          {/* Print Receipt Trigger */}
+          <button
+            onClick={() => {
+              setReceiptLead(null);
+              setIsReceiptOpen(true);
+            }}
+            className="flex items-center gap-1.5 px-4 py-2 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900 rounded-xl text-slate-650 dark:text-slate-350 font-semibold text-xs transition-colors cursor-pointer"
+          >
+            <Printer size={14} />
+            Print Receipt
+          </button>
+
           {/* CSV Export */}
           <button
             onClick={handleExportCSV}
@@ -320,7 +342,22 @@ const LeadsView = ({
 
               {/* Add Single Lead */}
               <button
-                onClick={() => setIsAddOpen(true)}
+                onClick={() => {
+                  setNewLead({
+                    name: '',
+                    phone: '',
+                    email: '',
+                    course: 'Basic',
+                    source: '',
+                    status: 'New',
+                    assigned_to: '',
+                    notes: '',
+                    follow_up_date: ''
+                  });
+                  setCounsellorSelect('');
+                  setCounsellorManualName('');
+                  setIsAddOpen(true);
+                }}
                 className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold text-xs shadow-md shadow-blue-500/10 transition-colors cursor-pointer"
               >
                 <Plus size={14} />
@@ -344,7 +381,7 @@ const LeadsView = ({
                 <th className="py-3.5 px-4">Assigned Agent</th>
                 <th className="py-3.5 px-4">Follow-Up</th>
                 <th className="py-3.5 px-4">Date Added</th>
-                {user.role === 'admin' && <th className="py-3.5 px-6 text-center">Action</th>}
+                <th className="py-3.5 px-6 text-center">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
@@ -358,7 +395,7 @@ const LeadsView = ({
                   <td className="py-4.5 px-6">
                     <div>
                       <span className="font-semibold text-slate-900 dark:text-white block hover:text-blue-600 dark:hover:text-blue-400">{lead.name}</span>
-                      <span className="text-3xs text-slate-400 dark:text-slate-500 block mt-0.5">{lead.phone} • {lead.email}</span>
+                      <span className="text-3xs text-slate-400 dark:text-slate-500 block mt-0.5">{lead.phone} {lead.email ? `• ${lead.email}` : ''}</span>
                     </div>
                   </td>
                   
@@ -406,18 +443,32 @@ const LeadsView = ({
                     {new Date(lead.created_at).toLocaleDateString()}
                   </td>
 
-                  {/* Admin Only Delete */}
-                  {user.role === 'admin' && (
-                    <td className="py-4.5 px-6 text-center">
+                  {/* Actions cell (Print and Delete) */}
+                  <td className="py-4.5 px-6 text-center">
+                    <div className="flex items-center justify-center gap-1.5">
                       <button
-                        onClick={(e) => handleDelete(lead.id, lead.name, e)}
-                        className="p-2 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-rose-500/10 cursor-pointer transition-colors"
-                        title="Delete lead file"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setReceiptLead(lead);
+                          setIsReceiptOpen(true);
+                        }}
+                        className="p-2 text-slate-400 hover:text-blue-500 rounded-lg hover:bg-blue-500/10 cursor-pointer transition-colors"
+                        title="Print receipt for this student"
                       >
-                        <Trash2 size={14} />
+                        <Printer size={14} />
                       </button>
-                    </td>
-                  )}
+
+                      {user.role === 'admin' && (
+                        <button
+                          onClick={(e) => handleDelete(lead.id, lead.name, e)}
+                          className="p-2 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-rose-500/10 cursor-pointer transition-colors"
+                          title="Delete lead file"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </td>
 
                 </tr>
               ))}
@@ -494,10 +545,9 @@ const LeadsView = ({
                   />
                 </div>
                 <div>
-                  <label className="text-3xs font-semibold uppercase text-slate-400">Email *</label>
+                  <label className="text-3xs font-semibold uppercase text-slate-400">Email (Optional)</label>
                   <input 
                     type="email" 
-                    required
                     value={newLead.email}
                     onChange={e => setNewLead({...newLead, email: e.target.value})}
                     className="w-full mt-1.5 px-3.5 py-2 border rounded-xl dark:border-slate-800 dark:bg-slate-900 bg-white text-xs"
@@ -507,13 +557,17 @@ const LeadsView = ({
 
               <div>
                 <label className="text-3xs font-semibold uppercase text-slate-400">Course Interested *</label>
-                <input 
-                  type="text" 
+                <select
                   required
                   value={newLead.course}
                   onChange={e => setNewLead({...newLead, course: e.target.value})}
-                  className="w-full mt-1.5 px-3.5 py-2 border rounded-xl dark:border-slate-800 dark:bg-slate-900 bg-white text-xs"
-                />
+                  className="w-full mt-1.5 px-3.5 py-2 border rounded-xl dark:border-slate-800 dark:bg-slate-900 bg-white text-xs text-slate-950 dark:text-slate-350 cursor-pointer focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                >
+                  <option value="Basic">Basic</option>
+                  <option value="Advance">Advance</option>
+                  <option value="Premium">Premium</option>
+                  <option value="Other">Other</option>
+                </select>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -535,15 +589,53 @@ const LeadsView = ({
                 <div>
                   <label className="text-3xs font-semibold uppercase text-slate-400">Counsellor</label>
                   <select
-                    value={newLead.assigned_to}
-                    onChange={e => setNewLead({...newLead, assigned_to: e.target.value})}
-                    className="w-full mt-1.5 px-3.5 py-2 border rounded-xl dark:border-slate-800 dark:bg-slate-900 bg-white text-xs text-slate-950 dark:text-slate-350 cursor-pointer focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    value={counsellorSelect}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setCounsellorSelect(val);
+                      if (val === 'Other') {
+                        setNewLead({...newLead, assigned_to: ''});
+                        setCounsellorManualName('');
+                      } else {
+                        setNewLead({...newLead, assigned_to: val});
+                        setCounsellorManualName('');
+                      }
+                    }}
+                    className="w-full mt-1.5 px-3.5 py-2 border rounded-xl dark:border-slate-800 dark:bg-slate-900 bg-white text-xs text-slate-955 dark:text-slate-355 cursor-pointer focus:ring-2 focus:ring-blue-500 focus:outline-none"
                   >
                     <option value="">Auto-Assign (Round-robin)</option>
-                    {callersList.filter(u => u.role === 'caller').map(c => (
+                    {callersList.filter(u => u.role === 'caller' && u.active).map(c => (
                       <option key={c.id} value={c.id}>{c.name}</option>
                     ))}
+                    <option value="Other">Other</option>
                   </select>
+
+                  {counsellorSelect === 'Other' && (
+                    <div className="mt-2.5">
+                      <input 
+                        type="text" 
+                        placeholder="Type counsellor name"
+                        value={counsellorManualName}
+                        onChange={e => {
+                          const val = e.target.value;
+                          setCounsellorManualName(val);
+                          const match = callersList.find(c => c.role === 'caller' && c.active && c.name.toLowerCase().trim() === val.toLowerCase().trim());
+                          setNewLead({...newLead, assigned_to: match ? match.id : ''});
+                        }}
+                        className="w-full px-3.5 py-2 border rounded-xl dark:border-slate-800 dark:bg-slate-900 bg-white text-xs"
+                      />
+                      {counsellorManualName.trim() && !newLead.assigned_to && (
+                        <span className="text-4xs text-rose-500 font-semibold mt-1 block">
+                          No matching registered caller account.
+                        </span>
+                      )}
+                      {counsellorManualName.trim() && newLead.assigned_to && (
+                        <span className="text-4xs text-emerald-500 font-semibold mt-1 block">
+                          ✓ Matches active caller account
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -561,6 +653,7 @@ const LeadsView = ({
                   <label className="text-3xs font-semibold uppercase text-slate-400">Lead Source</label>
                   <input 
                     type="text" 
+                    placeholder="e.g. Facebook Ad, Website"
                     value={newLead.source}
                     onChange={e => setNewLead({...newLead, source: e.target.value})}
                     className="w-full mt-1.5 px-3.5 py-2 border rounded-xl dark:border-slate-800 dark:bg-slate-900 bg-white text-xs"
@@ -652,6 +745,14 @@ const LeadsView = ({
           </div>
         </div>
       )}
+
+      {/* PRINT RECEIPT MODAL */}
+      <ReceiptModal 
+        isOpen={isReceiptOpen} 
+        onClose={() => setIsReceiptOpen(false)} 
+        lead={receiptLead} 
+        leadsList={leads} 
+      />
 
     </div>
   );

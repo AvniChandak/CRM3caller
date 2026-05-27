@@ -13,8 +13,10 @@ import {
   Clock,
   Loader,
   MessageSquarePlus,
-  Send
+  Send,
+  Printer
 } from 'lucide-react';
+import ReceiptModal from './ReceiptModal';
 
 const LeadModal = ({ leadId, isOpen, onClose, onLeadUpdated, callersList = [] }) => {
   const { user, token } = useAuth();
@@ -41,6 +43,11 @@ const LeadModal = ({ leadId, isOpen, onClose, onLeadUpdated, callersList = [] })
   // New note text
   const [newNote, setNewNote] = useState('');
 
+  // Counsellor select & search states
+  const [counsellorSelect, setCounsellorSelect] = useState('');
+  const [counsellorManualName, setCounsellorManualName] = useState('');
+  const [isReceiptOpen, setIsReceiptOpen] = useState(false);
+
   // Fetch lead data and activity history
   const fetchLeadDetails = async () => {
     if (!leadId) return;
@@ -58,11 +65,23 @@ const LeadModal = ({ leadId, isOpen, onClose, onLeadUpdated, callersList = [] })
       // Initialize form fields
       setStatus(data.status);
       setFollowUpDate(data.follow_up_date ? data.follow_up_date.substring(0, 16) : '');
-      setAssignedTo(data.assigned_to?.id || '');
+      const callerId = data.assigned_to?.id || '';
+      setAssignedTo(callerId);
+      const existsInList = callersList.some(c => c.id === callerId);
+      if (callerId && existsInList) {
+        setCounsellorSelect(callerId);
+        setCounsellorManualName('');
+      } else if (callerId) {
+        setCounsellorSelect('Other');
+        setCounsellorManualName(data.assigned_to?.name || '');
+      } else {
+        setCounsellorSelect('');
+        setCounsellorManualName('');
+      }
       setRevenue(data.revenue || 0);
       setName(data.name);
       setPhone(data.phone);
-      setEmail(data.email);
+      setEmail(data.email || '');
       setCourse(data.course);
       setSource(data.source);
       
@@ -239,10 +258,10 @@ const LeadModal = ({ leadId, isOpen, onClose, onLeadUpdated, callersList = [] })
                           />
                         </div>
                         <div>
-                          <label className="text-3xs font-semibold uppercase tracking-wide text-slate-400">Email</label>
+                          <label className="text-3xs font-semibold uppercase tracking-wide text-slate-400">Email (Optional)</label>
                           <input 
                             type="email" 
-                            value={email} 
+                            value={email || ''} 
                             onChange={e => setEmail(e.target.value)} 
                             className="w-full mt-1.5 px-3 py-2 border rounded-xl dark:border-slate-800 dark:bg-slate-900/60 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
                           />
@@ -256,14 +275,16 @@ const LeadModal = ({ leadId, isOpen, onClose, onLeadUpdated, callersList = [] })
                       <User size={16} className="text-blue-500" />
                       <span className="font-bold text-sm">{lead.name}</span>
                     </div>
-                    <div className="flex items-center gap-2.5 text-xs text-slate-600 dark:text-slate-450">
+                    <div className="flex items-center gap-2.5 text-xs text-slate-655 dark:text-slate-455">
                       <Phone size={14} />
                       <span className="select-all">{lead.phone}</span>
                     </div>
-                    <div className="flex items-center gap-2.5 text-xs text-slate-600 dark:text-slate-450">
-                      <Mail size={14} />
-                      <span className="select-all">{lead.email}</span>
-                    </div>
+                    {lead.email && (
+                      <div className="flex items-center gap-2.5 text-xs text-slate-655 dark:text-slate-455">
+                        <Mail size={14} />
+                        <span className="select-all">{lead.email}</span>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -272,12 +293,16 @@ const LeadModal = ({ leadId, isOpen, onClose, onLeadUpdated, callersList = [] })
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="text-3xs font-semibold uppercase tracking-wide text-slate-400">Course Interested</label>
-                      <input 
-                        type="text" 
-                        value={course} 
-                        onChange={e => setCourse(e.target.value)} 
-                        className="w-full mt-1.5 px-3 py-2 border rounded-xl dark:border-slate-800 dark:bg-slate-900/60 text-sm"
-                      />
+                      <select
+                        value={course}
+                        onChange={e => setCourse(e.target.value)}
+                        className="w-full mt-1.5 px-3 py-2 border rounded-xl bg-white dark:bg-slate-900 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none cursor-pointer"
+                      >
+                        <option value="Basic">Basic</option>
+                        <option value="Advance">Advance</option>
+                        <option value="Premium">Premium</option>
+                        <option value="Other">Other</option>
+                      </select>
                     </div>
                     <div>
                       <label className="text-3xs font-semibold uppercase tracking-wide text-slate-400">Lead Source</label>
@@ -337,15 +362,53 @@ const LeadModal = ({ leadId, isOpen, onClose, onLeadUpdated, callersList = [] })
                     <div>
                       <label className="text-3xs font-semibold uppercase tracking-wide text-slate-400">Assigned Caller</label>
                       <select
-                        value={assignedTo}
-                        onChange={e => setAssignedTo(e.target.value)}
-                        className="w-full mt-1.5 px-3 py-2 border rounded-xl bg-white dark:bg-slate-900 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none cursor-pointer"
+                        value={counsellorSelect}
+                        onChange={e => {
+                          const val = e.target.value;
+                          setCounsellorSelect(val);
+                          if (val === 'Other') {
+                            setAssignedTo('');
+                            setCounsellorManualName('');
+                          } else {
+                            setAssignedTo(val);
+                            setCounsellorManualName('');
+                          }
+                        }}
+                        className="w-full mt-1.5 px-3 py-2 border rounded-xl bg-white dark:bg-slate-900 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none cursor-pointer text-slate-950 dark:text-slate-350"
                       >
                         <option value="">Unassigned</option>
-                        {callersList.map(c => (
-                          <option key={c.id} value={c.id}>{c.name} {c.active ? '' : '(Inactive)'}</option>
+                        {callersList.filter(c => c.active).map(c => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
                         ))}
+                        <option value="Other">Other</option>
                       </select>
+
+                      {counsellorSelect === 'Other' && (
+                        <div className="mt-2.5">
+                          <input
+                            type="text"
+                            value={counsellorManualName}
+                            placeholder="Type counsellor name"
+                            onChange={e => {
+                              const val = e.target.value;
+                              setCounsellorManualName(val);
+                              const match = callersList.find(c => c.active && c.name.toLowerCase().trim() === val.toLowerCase().trim());
+                              setAssignedTo(match ? match.id : '');
+                            }}
+                            className="w-full px-3 py-2 border rounded-xl bg-white dark:bg-slate-900 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none text-slate-950 dark:text-slate-350"
+                          />
+                          {counsellorManualName.trim() && !assignedTo && (
+                            <span className="text-4xs text-rose-500 font-semibold mt-1 block">
+                              No matching registered caller account.
+                            </span>
+                          )}
+                          {counsellorManualName.trim() && assignedTo && (
+                            <span className="text-4xs text-emerald-500 font-semibold mt-1 block">
+                              ✓ Matches active caller account
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     <div>
@@ -370,6 +433,15 @@ const LeadModal = ({ leadId, isOpen, onClose, onLeadUpdated, callersList = [] })
 
               {/* Action buttons */}
               <div className="pt-4 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsReceiptOpen(true)}
+                  className="flex-1 py-3 px-4 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900 text-slate-700 dark:text-slate-350 font-semibold text-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Printer size={14} />
+                  Print Receipt
+                </button>
+
                 <button
                   type="button"
                   onClick={handleSaveChanges}
@@ -441,6 +513,13 @@ const LeadModal = ({ leadId, isOpen, onClose, onLeadUpdated, callersList = [] })
         )}
 
       </div>
+      {/* PRINT RECEIPT MODAL */}
+      <ReceiptModal 
+        isOpen={isReceiptOpen} 
+        onClose={() => setIsReceiptOpen(false)} 
+        lead={lead} 
+      />
+
     </div>
   );
 };

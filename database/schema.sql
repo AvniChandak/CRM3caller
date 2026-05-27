@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS public.leads (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(255) NOT NULL,
     phone VARCHAR(50) NOT NULL,
-    email VARCHAR(255) NOT NULL,
+    email VARCHAR(255),
     course VARCHAR(255) NOT NULL,
     source VARCHAR(255) NOT NULL,
     status VARCHAR(50) DEFAULT 'New' NOT NULL CHECK (status IN ('New', 'Contacted', 'Interested', 'Follow-up', 'Converted', 'Not Interested')),
@@ -47,26 +47,6 @@ CREATE TABLE IF NOT EXISTS public.activities (
 
 ALTER TABLE public.activities ENABLE ROW LEVEL SECURITY;
 
-
--- 4. Trigger to Limit Callers to Exactly 3
-CREATE OR REPLACE FUNCTION check_caller_limit()
-RETURNS TRIGGER AS $$
-BEGIN
-    -- Check limit if inserting a new caller OR updating role to caller
-    IF NEW.role = 'caller' AND (TG_OP = 'INSERT' OR OLD.role <> 'caller') THEN
-        IF (SELECT COUNT(*) FROM public.users WHERE role = 'caller') >= 3 THEN
-            RAISE EXCEPTION 'Maximum number of caller accounts (3) has been reached.';
-        END IF;
-    END IF;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS enforce_caller_limit ON public.users;
-CREATE TRIGGER enforce_caller_limit
-BEFORE INSERT OR UPDATE ON public.users
-FOR EACH ROW
-EXECUTE FUNCTION check_caller_limit();
 
 
 -- 5. Helper Policies for backend service role (bypasses RLS by default, but let's allow all actions for safety)

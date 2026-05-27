@@ -45,20 +45,7 @@ export const AuthProvider = ({ children }) => {
       setToken(jwtToken);
       localStorage.setItem('crm-token', jwtToken);
 
-      // Verify and fetch profile from Express backend to enforce role validation and active check
-      const response = await fetch(`${API_BASE_URL}/leads`, {
-        headers: {
-          'Authorization': `Bearer ${jwtToken}`
-        }
-      });
-
-      if (response.status === 401 || response.status === 403) {
-        // If inactive or unauthorized
-        const data = await response.json();
-        throw new Error(data.error || 'Account deactivated or unauthorized');
-      }
-
-      // Fetch the specific user profile from the Express backend
+      // Fetch the specific user profile from the Express backend directly
       const profileResponse = await fetch(`${API_BASE_URL}/auth/me`, {
         headers: {
           'Authorization': `Bearer ${jwtToken}`
@@ -67,7 +54,10 @@ export const AuthProvider = ({ children }) => {
 
       if (!profileResponse.ok) {
         const errorData = await profileResponse.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to retrieve user profile');
+        if (profileResponse.status === 401 || profileResponse.status === 403) {
+          throw new Error(errorData.error || 'Account deactivated or unauthorized');
+        }
+        throw new Error(errorData.error || `Server error (${profileResponse.status})`);
       }
 
       const profile = await profileResponse.json();
@@ -76,13 +66,34 @@ export const AuthProvider = ({ children }) => {
       setError(null);
     } catch (err) {
       console.error('Session sync error:', err.message);
-      setError(err.message);
-      setUser(null);
-      setToken(null);
-      localStorage.removeItem('crm-token');
-      await supabase.auth.signOut();
-      if (throwOnError) {
-        throw err;
+      
+      const isAuthError = err.message.includes('deactivated') || 
+                          err.message.includes('unauthorized') || 
+                          err.message.includes('Invalid token') || 
+                          err.message.includes('not found in database');
+
+      if (isAuthError || throwOnError) {
+        setError(err.message);
+        setUser(null);
+        setToken(null);
+        localStorage.removeItem('crm-token');
+        await supabase.auth.signOut();
+        if (throwOnError) {
+          throw err;
+        }
+      } else {
+        // Network or server temporary error (e.g. node server restarting)
+        // Keep the token and session, but show a soft connection error.
+        setError(`Backend Connection issue: ${err.message}. Retrying on next request...`);
+        // Fallback to Supabase auth user metadata so the UI doesn't crash
+        const metaUser = session.user;
+        setUser({
+          id: metaUser.id,
+          name: metaUser.user_metadata?.name || 'Local User',
+          email: metaUser.email,
+          role: 'caller', // Fallback role for UI structure
+          active: true
+        });
       }
     } finally {
       setLoading(false);

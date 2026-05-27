@@ -8,9 +8,6 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-const cors = require("cors");
-app.use(cors());
-
 // Enable CORS with support for Authorization headers
 app.use(cors({
   origin: '*', // In production, customize this to your front-end URL
@@ -167,8 +164,8 @@ const requireAdmin = (req, res, next) => {
 app.post('/api/public/leads', async (req, res) => {
   const { name, phone, email, course, source, status, assigned_to, notes, follow_up_date } = req.body;
 
-  if (!name || !phone || !email || !course) {
-    return res.status(400).json({ error: 'Missing required fields: name, phone, email, course' });
+  if (!name || !phone || !course) {
+    return res.status(400).json({ error: 'Missing required fields: name, phone, course' });
   }
 
   try {
@@ -313,19 +310,6 @@ app.post('/api/admin/users', authenticateJWT, requireAdmin, async (req, res) => 
   }
 
   try {
-    // If creating a caller, enforce caller limit (exactly 3 maximum)
-    if (role === 'caller') {
-      const { count, error: countError } = await supabase
-        .from('users')
-        .select('*', { count: 'exact', head: true })
-        .eq('role', 'caller');
-
-      if (countError) throw countError;
-
-      if (count >= 3) {
-        return res.status(400).json({ error: 'Caller limit reached. A maximum of exactly 3 caller accounts is allowed.' });
-      }
-    }
 
     // 1. Create user in Supabase Auth using admin panel
     const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
@@ -398,6 +382,31 @@ app.put('/api/admin/users/:id', authenticateJWT, requireAdmin, async (req, res) 
   }
 });
 
+// DELETE: Delete a user account (Admin only)
+app.delete('/api/admin/users/:id', authenticateJWT, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  try {
+    // 1. Delete user from public.users table (FK on delete set null handles leads table)
+    const { error: profileError } = await supabase
+      .from('users')
+      .delete()
+      .eq('id', id);
+
+    if (profileError) throw profileError;
+
+    // 2. Delete user from Supabase Auth via Admin API
+    const { error: authError } = await supabase.auth.admin.deleteUser(id);
+    if (authError) {
+      console.warn('Auth deletion warning:', authError.message);
+    }
+
+    return res.json({ message: 'User account deleted successfully' });
+  } catch (err) {
+    console.error('Delete user error:', err);
+    return res.status(500).json({ error: err.message || 'Failed to delete user' });
+  }
+});
+
 
 // GET: Fetch current logged in user profile details
 app.get('/api/auth/me', authenticateJWT, async (req, res) => {
@@ -432,6 +441,57 @@ app.get('/api/leads', authenticateJWT, async (req, res) => {
   } catch (err) {
     console.error('Fetch leads error:', err);
     return res.status(500).json({ error: 'Failed to fetch leads' });
+  }
+});
+
+// GET: Export leads in CSV format (Role-Filtered)
+app.get('/api/leads/export', authenticateJWT, async (req, res) => {
+  try {
+    let query = supabase.from('leads').select('name, phone, status, follow_up_date, notes, created_at, assigned_to(id, name)');
+
+    if (req.user.role === 'caller') {
+      query = query.eq('assigned_to', req.user.id);
+    }
+
+    const { data: leads, error } = await query.order('created_at', { ascending: false });
+    if (error) throw error;
+
+    // Convert JSON to CSV format
+    if (leads.length === 0) {
+      return res.status(200).send('No data available');
+    }
+
+    const headers = "Number,Student Name,Call Status,Next Follow-up Date,Discussion Notes,Date,Counsellor";
+    const rows = leads.map(lead => {
+      const counsellorName = lead.assigned_to ? lead.assigned_to.name : 'Unassigned';
+      const formattedDate = lead.created_at ? new Date(lead.created_at).toLocaleDateString() : '';
+      const formattedFollowUp = lead.follow_up_date ? new Date(lead.follow_up_date).toLocaleDateString() : '';
+
+      const values = [
+        lead.phone || '',
+        lead.name || '',
+        lead.status || '',
+        formattedFollowUp,
+        lead.notes || '',
+        formattedDate,
+        counsellorName
+      ];
+
+      return values.map(val => {
+        if (val === null || val === undefined) return '""';
+        const str = String(val).replace(/"/g, '""');
+        return `"${str}"`;
+      }).join(',');
+    });
+
+    const csvContent = [headers, ...rows].join('\n');
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="leads_export.csv"');
+    return res.status(200).send(csvContent);
+
+  } catch (err) {
+    console.error('CSV Export error:', err);
+    return res.status(500).json({ error: 'Failed to export CSV file' });
   }
 });
 
@@ -787,56 +847,7 @@ app.get('/api/admin/analytics', authenticateJWT, requireAdmin, async (req, res) 
 
 // --- BULK OPERATIONS & EXPORTS ---
 
-// GET: Export leads in CSV format (Role-Filtered)
-app.get('/api/leads/export', authenticateJWT, async (req, res) => {
-  try {
-    let query = supabase.from('leads').select('name, phone, status, follow_up_date, notes, created_at, assigned_to(id, name)');
 
-    if (req.user.role === 'caller') {
-      query = query.eq('assigned_to', req.user.id);
-    }
-
-    const { data: leads, error } = await query.order('created_at', { ascending: false });
-    if (error) throw error;
-
-    // Convert JSON to CSV format
-    if (leads.length === 0) {
-      return res.status(200).send('No data available');
-    }
-
-    const headers = "Number,Student Name,Call Status,Next Follow-up Date,Discussion Notes,Date,Counsellor";
-    const rows = leads.map(lead => {
-      const counsellorName = lead.assigned_to ? lead.assigned_to.name : 'Unassigned';
-      const formattedDate = lead.created_at ? new Date(lead.created_at).toLocaleDateString() : '';
-      const formattedFollowUp = lead.follow_up_date ? new Date(lead.follow_up_date).toLocaleDateString() : '';
-
-      const values = [
-        lead.phone || '',
-        lead.name || '',
-        lead.status || '',
-        formattedFollowUp,
-        lead.notes || '',
-        formattedDate,
-        counsellorName
-      ];
-
-      return values.map(val => {
-        if (val === null || val === undefined) return '""';
-        const str = String(val).replace(/"/g, '""');
-        return `"${str}"`;
-      }).join(',');
-    });
-
-    const csvContent = [headers, ...rows].join('\n');
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', 'attachment; filename="leads_export.csv"');
-    return res.status(200).send(csvContent);
-
-  } catch (err) {
-    console.error('CSV Export error:', err);
-    return res.status(500).json({ error: 'Failed to export CSV file' });
-  }
-});
 
 // POST: CSV Bulk Import (Admin Only: round-robin auto-assigns leads)
 app.post('/api/admin/leads/import', authenticateJWT, requireAdmin, async (req, res) => {
@@ -882,7 +893,7 @@ app.post('/api/admin/leads/import', authenticateJWT, requireAdmin, async (req, r
     // 3. Process each lead and distribute round-robin
     for (const item of leadsList) {
       const { name, phone, email, course, source } = item;
-      if (!name || !phone || !email || !course) continue; // Skip incomplete items
+      if (!name || !phone || !course) continue; // Skip incomplete items
 
       let assignedTo = null;
       let callerName = '';

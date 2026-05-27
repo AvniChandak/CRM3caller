@@ -11,7 +11,8 @@ import {
   X, 
   Loader,
   Users2,
-  AlertCircle
+  AlertCircle,
+  Trash2
 } from 'lucide-react';
 
 const UsersView = ({ users, onRefresh }) => {
@@ -42,6 +43,28 @@ const UsersView = ({ users, onRefresh }) => {
       });
 
       if (!res.ok) throw new Error('Failed to update caller status.');
+      onRefresh();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  const handleDeleteCaller = async (id, name) => {
+    if (!window.confirm(`Are you sure you want to permanently delete caller account: "${name}"?\nThis will set their assigned leads to unassigned.`)) return;
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/admin/users/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Failed to delete caller.');
+      }
+      alert('Caller account deleted successfully.');
       onRefresh();
     } catch (err) {
       alert(err.message);
@@ -95,16 +118,12 @@ const UsersView = ({ users, onRefresh }) => {
         {/* Callers capacity card */}
         <div className="glass-panel p-6 rounded-2xl border shadow-xs flex items-center justify-between">
           <div className="space-y-1">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">Callers Capacity</span>
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">Registered Callers</span>
             <div className="flex items-baseline gap-2">
-              <h3 className="text-3xl font-extrabold text-slate-900 dark:text-white">{callers.length} / 3</h3>
-              <span className="text-xs font-medium text-slate-400">Caller slots occupied</span>
+              <h3 className="text-3xl font-extrabold text-slate-900 dark:text-white">{callers.length}</h3>
+              <span className="text-xs font-medium text-slate-400">Caller accounts</span>
             </div>
-            {callers.length >= 3 ? (
-              <span className="text-3xs text-rose-500 font-bold uppercase tracking-wider block mt-1">Maximum 3 callers capacity reached</span>
-            ) : (
-              <span className="text-3xs text-emerald-500 font-bold uppercase tracking-wider block mt-1">Caller slots available</span>
-            )}
+            <span className="text-3xs text-emerald-500 font-bold uppercase tracking-wider block mt-1">Manage active system callers</span>
           </div>
           <div className="p-4 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400">
             <Users2 size={24} />
@@ -140,8 +159,7 @@ const UsersView = ({ users, onRefresh }) => {
           
           <button
             onClick={() => setIsAddOpen(true)}
-            disabled={callers.length >= 3}
-            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold text-xs shadow-md shadow-blue-500/10 hover:shadow-lg transition-all disabled:opacity-50 disabled:pointer-events-none cursor-pointer"
+            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold text-xs shadow-md shadow-blue-500/10 hover:shadow-lg transition-all cursor-pointer"
           >
             <UserPlus size={14} />
             Create Caller
@@ -156,6 +174,7 @@ const UsersView = ({ users, onRefresh }) => {
                 <th className="py-3 px-6">Name</th>
                 <th className="py-3 px-4">Email</th>
                 <th className="py-3 px-4 text-center">Status</th>
+                <th className="py-3 px-4 text-center">Delete</th>
                 <th className="py-3 px-6 text-right">Login Control</th>
               </tr>
             </thead>
@@ -187,6 +206,17 @@ const UsersView = ({ users, onRefresh }) => {
                     </span>
                   </td>
 
+                  {/* Delete Caller */}
+                  <td className="py-4 px-4 text-center">
+                    <button
+                      onClick={() => handleDeleteCaller(caller.id, caller.name)}
+                      className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg cursor-pointer transition-colors"
+                      title="Delete Caller Account"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </td>
+
                   {/* Active Toggle Switch */}
                   <td className="py-4 px-6 text-right select-none">
                     <button
@@ -207,7 +237,7 @@ const UsersView = ({ users, onRefresh }) => {
 
               {callers.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="py-12 text-center text-slate-400 text-xs">
+                  <td colSpan={5} className="py-12 text-center text-slate-400 text-xs">
                     No active sales callers seeded. Create callers to start distributing leads.
                   </td>
                 </tr>
@@ -232,13 +262,6 @@ const UsersView = ({ users, onRefresh }) => {
               </button>
             </div>
 
-            {callers.length >= 3 ? (
-              <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400 text-xs font-semibold flex items-start gap-2.5 mb-4">
-                <AlertCircle size={16} className="shrink-0 mt-0.5" />
-                <span>Creating a new caller is disabled. You have already registered the maximum limit of exactly 3 caller accounts.</span>
-              </div>
-            ) : null}
-
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="text-3xs font-semibold uppercase text-slate-400">Caller Full Name</label>
@@ -252,7 +275,6 @@ const UsersView = ({ users, onRefresh }) => {
                     placeholder="John Caller"
                     value={name}
                     onChange={e => setName(e.target.value)}
-                    disabled={callers.length >= 3}
                     className="w-full pl-9 pr-3 py-2 border rounded-xl dark:border-slate-800 dark:bg-slate-900 text-xs"
                   />
                 </div>
@@ -270,7 +292,6 @@ const UsersView = ({ users, onRefresh }) => {
                     placeholder="caller@company.com"
                     value={email}
                     onChange={e => setEmail(e.target.value)}
-                    disabled={callers.length >= 3}
                     className="w-full pl-9 pr-3 py-2 border rounded-xl dark:border-slate-800 dark:bg-slate-900 text-xs"
                   />
                 </div>
@@ -288,7 +309,6 @@ const UsersView = ({ users, onRefresh }) => {
                     placeholder="••••••••"
                     value={password}
                     onChange={e => setPassword(e.target.value)}
-                    disabled={callers.length >= 3}
                     className="w-full pl-9 pr-3 py-2 border rounded-xl dark:border-slate-800 dark:bg-slate-900 text-xs"
                   />
                 </div>
@@ -304,7 +324,7 @@ const UsersView = ({ users, onRefresh }) => {
                 </button>
                 <button
                   type="submit"
-                  disabled={isSubmitting || callers.length >= 3}
+                  disabled={isSubmitting}
                   className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl shadow-md cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-75"
                 >
                   {isSubmitting ? <Loader className="animate-spin" size={12} /> : null}
