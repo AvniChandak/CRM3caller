@@ -147,11 +147,12 @@ const LeadsView = ({
 
     try {
       setIsCreating(true);
-      // POSTing to public API endpoint which automatically handles round-robin distribution
-      const res = await fetch(`${API_BASE_URL}/public/leads`, {
+      // POSTing to authenticated API endpoint which handles caller-specific assignment constraints
+      const res = await fetch(`${API_BASE_URL}/leads`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify(newLead)
       });
@@ -330,41 +331,38 @@ const LeadsView = ({
           </button>
 
           {user.role === 'admin' && (
-            <>
-              {/* CSV Import */}
-              <button
-                onClick={() => setIsImportOpen(true)}
-                className="flex items-center gap-1.5 px-4 py-2 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900 rounded-xl text-slate-600 dark:text-slate-300 font-semibold text-xs transition-colors cursor-pointer"
-              >
-                <FileUp size={14} />
-                Import Batch
-              </button>
-
-              {/* Add Single Lead */}
-              <button
-                onClick={() => {
-                  setNewLead({
-                    name: '',
-                    phone: '',
-                    email: '',
-                    course: 'Basic',
-                    source: '',
-                    status: 'New',
-                    assigned_to: '',
-                    notes: '',
-                    follow_up_date: ''
-                  });
-                  setCounsellorSelect('');
-                  setCounsellorManualName('');
-                  setIsAddOpen(true);
-                }}
-                className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold text-xs shadow-md shadow-blue-500/10 transition-colors cursor-pointer"
-              >
-                <Plus size={14} />
-                Create Lead
-              </button>
-            </>
+            <button
+              onClick={() => setIsImportOpen(true)}
+              className="flex items-center gap-1.5 px-4 py-2 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900 rounded-xl text-slate-600 dark:text-slate-300 font-semibold text-xs transition-colors cursor-pointer"
+            >
+              <FileUp size={14} />
+              Import Batch
+            </button>
           )}
+
+          {/* Add Single Lead */}
+          <button
+            onClick={() => {
+              setNewLead({
+                name: '',
+                phone: '',
+                email: '',
+                course: 'Basic',
+                source: '',
+                status: 'New',
+                assigned_to: user.role === 'caller' ? user.id : '',
+                notes: '',
+                follow_up_date: ''
+              });
+              setCounsellorSelect(user.role === 'caller' ? user.id : '');
+              setCounsellorManualName('');
+              setIsAddOpen(true);
+            }}
+            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold text-xs shadow-md shadow-blue-500/10 transition-colors cursor-pointer"
+          >
+            <Plus size={14} />
+            Create Lead
+          </button>
         </div>
 
       </div>
@@ -588,53 +586,64 @@ const LeadsView = ({
                 </div>
                 <div>
                   <label className="text-3xs font-semibold uppercase text-slate-400">Counsellor</label>
-                  <select
-                    value={counsellorSelect}
-                    onChange={e => {
-                      const val = e.target.value;
-                      setCounsellorSelect(val);
-                      if (val === 'Other') {
-                        setNewLead({...newLead, assigned_to: ''});
-                        setCounsellorManualName('');
-                      } else {
-                        setNewLead({...newLead, assigned_to: val});
-                        setCounsellorManualName('');
-                      }
-                    }}
-                    className="w-full mt-1.5 px-3.5 py-2 border rounded-xl dark:border-slate-800 dark:bg-slate-900 bg-white text-xs text-slate-955 dark:text-slate-355 cursor-pointer focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  >
-                    <option value="">Auto-Assign (Round-robin)</option>
-                    {callersList.filter(u => u.role === 'caller' && u.active).map(c => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                    <option value="Other">Other</option>
-                  </select>
-
-                  {counsellorSelect === 'Other' && (
-                    <div className="mt-2.5">
-                      <input 
-                        type="text" 
-                        placeholder="Type counsellor name"
-                        value={counsellorManualName}
+                  {user.role === 'admin' ? (
+                    <>
+                      <select
+                        value={counsellorSelect}
                         onChange={e => {
                           const val = e.target.value;
-                          setCounsellorManualName(val);
-                          const match = callersList.find(c => c.role === 'caller' && c.active && c.name.toLowerCase().trim() === val.toLowerCase().trim());
-                          setNewLead({...newLead, assigned_to: match ? match.id : ''});
+                          setCounsellorSelect(val);
+                          if (val === 'Other') {
+                            setNewLead({...newLead, assigned_to: ''});
+                            setCounsellorManualName('');
+                          } else {
+                            setNewLead({...newLead, assigned_to: val});
+                            setCounsellorManualName('');
+                          }
                         }}
-                        className="w-full px-3.5 py-2 border rounded-xl dark:border-slate-800 dark:bg-slate-900 bg-white text-xs"
-                      />
-                      {counsellorManualName.trim() && !newLead.assigned_to && (
-                        <span className="text-4xs text-rose-500 font-semibold mt-1 block">
-                          No matching registered caller account.
-                        </span>
+                        className="w-full mt-1.5 px-3.5 py-2 border rounded-xl dark:border-slate-800 dark:bg-slate-900 bg-white text-xs text-slate-955 dark:text-slate-355 cursor-pointer focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      >
+                        <option value="">Auto-Assign (Round-robin)</option>
+                        {callersList.filter(u => u.role === 'caller' && u.active).map(c => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                        <option value="Other">Other</option>
+                      </select>
+
+                      {counsellorSelect === 'Other' && (
+                        <div className="mt-2.5">
+                          <input 
+                            type="text" 
+                            placeholder="Type counsellor name"
+                            value={counsellorManualName}
+                            onChange={e => {
+                              const val = e.target.value;
+                              setCounsellorManualName(val);
+                              const match = callersList.find(c => c.role === 'caller' && c.active && c.name.toLowerCase().trim() === val.toLowerCase().trim());
+                              setNewLead({...newLead, assigned_to: match ? match.id : ''});
+                            }}
+                            className="w-full px-3.5 py-2 border rounded-xl dark:border-slate-800 dark:bg-slate-900 bg-white text-xs"
+                          />
+                          {counsellorManualName.trim() && !newLead.assigned_to && (
+                            <span className="text-4xs text-rose-500 font-semibold mt-1 block">
+                              No matching registered caller account.
+                            </span>
+                          )}
+                          {counsellorManualName.trim() && newLead.assigned_to && (
+                            <span className="text-4xs text-emerald-500 font-semibold mt-1 block">
+                              ✓ Matches active caller account
+                            </span>
+                          )}
+                        </div>
                       )}
-                      {counsellorManualName.trim() && newLead.assigned_to && (
-                        <span className="text-4xs text-emerald-500 font-semibold mt-1 block">
-                          ✓ Matches active caller account
-                        </span>
-                      )}
-                    </div>
+                    </>
+                  ) : (
+                    <input 
+                      type="text" 
+                      readOnly 
+                      value={user.name} 
+                      className="w-full mt-1.5 px-3.5 py-2 border rounded-xl dark:border-slate-800 dark:bg-slate-900/60 bg-slate-100/50 text-slate-500 text-xs focus:outline-none cursor-not-allowed"
+                    />
                   )}
                 </div>
               </div>

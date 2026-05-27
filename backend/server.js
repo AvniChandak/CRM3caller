@@ -88,12 +88,16 @@ app.get('/api/realtime', async (req, res) => {
 const broadcastUpdate = (type, data) => {
   sseClients.forEach(client => {
     try {
+      const assignedId = (data.assigned_to && typeof data.assigned_to === 'object')
+        ? data.assigned_to.id
+        : data.assigned_to;
+
       if (client.role === 'admin') {
         // Admins see all changes
         client.res.write(`data: ${JSON.stringify({ type, data })}\n\n`);
       } else if (client.role === 'caller') {
         // Callers only receive updates for leads assigned to them
-        if (data.assigned_to === client.id) {
+        if (assignedId === client.id) {
           // Remove revenue for caller security
           const sanitizedLead = { ...data };
           delete sanitizedLead.revenue;
@@ -234,7 +238,7 @@ app.post('/api/public/leads', async (req, res) => {
     const { data: insertedLead, error: insertError } = await supabase
       .from('leads')
       .insert([newLead])
-      .select()
+      .select('*, assigned_to(id, name)')
       .single();
 
     if (insertError) throw insertError;
@@ -444,6 +448,122 @@ app.get('/api/leads', authenticateJWT, async (req, res) => {
   }
 });
 
+// POST: Create a new lead (Authenticated)
+app.post('/api/leads', authenticateJWT, async (req, res) => {
+  const { name, phone, email, course, source, status, assigned_to, notes, follow_up_date } = req.body;
+
+  if (!name || !phone || !course) {
+    return res.status(400).json({ error: 'Missing required fields: name, phone, course' });
+  }
+
+  try {
+    let assignedTo = assigned_to || null;
+    let assignedCallerName = 'Unassigned';
+
+    if (req.user.role === 'caller') {
+      // Callers can ONLY create leads assigned to themselves
+      assignedTo = req.user.id;
+      assignedCallerName = req.user.name;
+    } else {
+      // Admins can assign to anyone or let round-robin handle it
+      if (assignedTo && assignedTo !== '') {
+        const { data: counsellor } = await supabase
+          .from('users')
+          .select('name')
+          .eq('id', assignedTo)
+          .single();
+        if (counsellor) {
+          assignedCallerName = counsellor.name;
+        }
+      } else {
+        // Round-robin or unassigned
+        const { data: callers, error: callersError } = await supabase
+          .from('users')
+          .select('id, name')
+          .eq('role', 'caller')
+          .eq('active', true)
+          .order('created_at', { ascending: true });
+
+        if (callersError) throw callersError;
+
+        if (callers && callers.length > 0) {
+          const { data: lastLeads, error: lastLeadError } = await supabase
+            .from('leads')
+            .select('assigned_to')
+            .not('assigned_to', 'is', null)
+            .order('created_at', { ascending: false })
+            .limit(1);
+
+          if (lastLeadError) throw lastLeadError;
+
+          let nextIndex = 0;
+          if (lastLeads && lastLeads.length > 0) {
+            const lastAssignedId = lastLeads[0].assigned_to;
+            const lastIndex = callers.findIndex(c => c.id === lastAssignedId);
+            if (lastIndex !== -1) {
+              nextIndex = (lastIndex + 1) % callers.length;
+            }
+          }
+
+          assignedTo = callers[nextIndex].id;
+          assignedCallerName = callers[nextIndex].name;
+        }
+      }
+    }
+
+    const newLead = {
+      name,
+      phone,
+      email,
+      course,
+      source: source || (req.user.role === 'caller' ? 'Caller Created' : 'Manual Entry'),
+      status: status || 'New',
+      assigned_to: assignedTo,
+      revenue: 0,
+      notes: notes || '',
+      follow_up_date: follow_up_date || null
+    };
+
+    const { data: insertedLead, error: insertError } = await supabase
+      .from('leads')
+      .insert([newLead])
+      .select('*, assigned_to(id, name)')
+      .single();
+
+    if (insertError) throw insertError;
+
+    // Log activity
+    const activityText = req.user.role === 'caller'
+      ? `Lead created manually by Caller ${req.user.name}`
+      : (req.body.assigned_to
+        ? `Lead created manually by Admin and assigned to ${assignedCallerName}`
+        : (assignedTo
+          ? `Lead created manually by Admin and auto-assigned to ${assignedCallerName} (Round-robin)`
+          : 'Lead created manually by Admin (Unassigned: no active callers)'));
+
+    await supabase
+      .from('activities')
+      .insert([{
+        lead_id: insertedLead.id,
+        user_id: req.user.id,
+        action: activityText
+      }]);
+
+    broadcastUpdate('LEAD_CREATED', insertedLead);
+
+    return res.status(201).json({
+      message: 'Lead created successfully',
+      leadId: insertedLead.id,
+      assignedTo: assignedCallerName,
+      lead: insertedLead
+    });
+
+  } catch (err) {
+    console.error('Lead creation error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET: Export leads in CSV format (Role-Filtered)
 app.get('/api/leads/export', authenticateJWT, async (req, res) => {
   try {
@@ -591,7 +711,7 @@ app.put('/api/leads/:id', authenticateJWT, async (req, res) => {
       .from('leads')
       .update(payload)
       .eq('id', id)
-      .select()
+      .select('*, assigned_to(id, name)')
       .single();
 
     if (updateError) throw updateError;
@@ -732,7 +852,7 @@ app.post('/api/leads/:id/notes', authenticateJWT, async (req, res) => {
       .from('leads')
       .update({ notes: updatedNotes })
       .eq('id', id)
-      .select()
+      .select('*, assigned_to(id, name)')
       .single();
 
     if (updateError) throw updateError;
@@ -920,7 +1040,7 @@ app.post('/api/admin/leads/import', authenticateJWT, requireAdmin, async (req, r
       const { data: dbLead, error: insErr } = await supabase
         .from('leads')
         .insert([leadRecord])
-        .select()
+        .select('*, assigned_to(id, name)')
         .single();
 
       if (insErr) {

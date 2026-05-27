@@ -17,9 +17,23 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null); // Contains profile details { id, name, email, role, active }
-  const [token, setToken] = useState(null); // Supabase JWT access token
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState(() => {
+    try {
+      const cached = localStorage.getItem('crm-user');
+      return cached ? JSON.parse(cached) : null;
+    } catch (e) {
+      return null;
+    }
+  });
+  const [token, setToken] = useState(() => {
+    return localStorage.getItem('crm-token') || null;
+  });
+  const [loading, setLoading] = useState(() => {
+    const cachedToken = localStorage.getItem('crm-token');
+    const cachedUser = localStorage.getItem('crm-user');
+    if (cachedToken && cachedUser) return false;
+    return true;
+  });
   const [error, setError] = useState(null);
 
   // Clear session data
@@ -28,6 +42,7 @@ export const AuthProvider = ({ children }) => {
     setToken(null);
     setError(null);
     localStorage.removeItem('crm-token');
+    localStorage.removeItem('crm-user');
     await supabase.auth.signOut();
   };
 
@@ -36,6 +51,8 @@ export const AuthProvider = ({ children }) => {
     if (!session) {
       setUser(null);
       setToken(null);
+      localStorage.removeItem('crm-token');
+      localStorage.removeItem('crm-user');
       setLoading(false);
       return;
     }
@@ -63,6 +80,7 @@ export const AuthProvider = ({ children }) => {
       const profile = await profileResponse.json();
 
       setUser(profile);
+      localStorage.setItem('crm-user', JSON.stringify(profile));
       setError(null);
     } catch (err) {
       console.error('Session sync error:', err.message);
@@ -77,6 +95,7 @@ export const AuthProvider = ({ children }) => {
         setUser(null);
         setToken(null);
         localStorage.removeItem('crm-token');
+        localStorage.removeItem('crm-user');
         await supabase.auth.signOut();
         if (throwOnError) {
           throw err;
@@ -87,13 +106,15 @@ export const AuthProvider = ({ children }) => {
         setError(`Backend Connection issue: ${err.message}. Retrying on next request...`);
         // Fallback to Supabase auth user metadata so the UI doesn't crash
         const metaUser = session.user;
-        setUser({
+        const fallbackUser = {
           id: metaUser.id,
           name: metaUser.user_metadata?.name || 'Local User',
           email: metaUser.email,
           role: 'caller', // Fallback role for UI structure
           active: true
-        });
+        };
+        setUser(fallbackUser);
+        localStorage.setItem('crm-user', JSON.stringify(fallbackUser));
       }
     } finally {
       setLoading(false);

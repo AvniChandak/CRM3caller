@@ -103,7 +103,8 @@ const DashboardApp = () => {
         // Update leads list in-place instantly
         if (type === 'LEAD_CREATED') {
           // Verify if caller account can see it
-          if (user.role === 'caller' && data.assigned_to !== user.id) return;
+          const assignedId = (data.assigned_to && typeof data.assigned_to === 'object') ? data.assigned_to.id : data.assigned_to;
+          if (user.role === 'caller' && assignedId !== user.id) return;
           
           setLeadsList(prev => {
             // Check if already in list
@@ -113,7 +114,8 @@ const DashboardApp = () => {
         } 
         else if (type === 'LEAD_UPDATED') {
           // If assigned to someone else and caller account, remove it
-          if (user.role === 'caller' && data.assigned_to !== user.id) {
+          const assignedId = (data.assigned_to && typeof data.assigned_to === 'object') ? data.assigned_to.id : data.assigned_to;
+          if (user.role === 'caller' && assignedId !== user.id) {
             setLeadsList(prev => prev.filter(lead => lead.id !== data.id));
             if (selectedLeadId === data.id) {
               setSelectedLeadId(null);
